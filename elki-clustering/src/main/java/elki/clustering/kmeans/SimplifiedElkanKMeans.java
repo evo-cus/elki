@@ -2,7 +2,7 @@
  * This file is part of ELKI:
  * Environment for Developing KDD-Applications Supported by Index-Structures
  *
- * Copyright (C) 2019
+ * Copyright (C) 2021
  * ELKI Development Team
  *
  * This program is free software: you can redistribute it and/or modify
@@ -99,6 +99,16 @@ public class SimplifiedElkanKMeans<V extends NumberVector> extends AbstractKMean
    */
   protected static class Instance extends AbstractKMeans.Instance {
     /**
+     * Sum aggregate for the new mean.
+     */
+    double[][] sums;
+
+    /**
+     * Scratch space for new means.
+     */
+    double[][] newmeans;
+
+    /**
      * Upper bounds
      */
     WritableDoubleDataStore upper;
@@ -109,24 +119,15 @@ public class SimplifiedElkanKMeans<V extends NumberVector> extends AbstractKMean
     WritableDataStore<double[]> lower;
 
     /**
-     * Sums of clusters.
-     */
-    double[][] sums;
-
-    /**
-     * Scratch space for new means.
-     */
-    double[][] newmeans;
-
-    /**
      * Cluster separation
      */
-    double[] sep = new double[k];
+    double[] sep;
 
     /**
      * Constructor.
      *
      * @param relation Relation
+     * @param df Distance function
      * @param means Initial means
      */
     public Instance(Relation<? extends NumberVector> relation, NumberVectorDistance<?> df, double[][] means) {
@@ -157,12 +158,10 @@ public class SimplifiedElkanKMeans<V extends NumberVector> extends AbstractKMean
     /**
      * Perform initial cluster assignment.
      *
-     * @return Number of changes (i.e. relation size)
+     * @return Number of changes (i.e., relation size)
      */
     protected int initialAssignToNearestCluster() {
       assert k == means.length;
-      double[][] cdist = new double[k][k];
-      initialSeperation(cdist);
       for(DBIDIter it = relation.iterDBIDs(); it.valid(); it.advance()) {
         NumberVector fv = relation.get(it);
         double[] l = lower.get(it);
@@ -170,24 +169,17 @@ public class SimplifiedElkanKMeans<V extends NumberVector> extends AbstractKMean
         double best = l[0] = sqrtdistance(fv, means[0]);
         int minIndex = 0;
         for(int j = 1; j < k; j++) {
-          if(best > cdist[minIndex][j]) {
-            double dist = l[j] = sqrtdistance(fv, means[j]);
-            if(dist < best) {
-              minIndex = j;
-              best = dist;
-            }
-          }
-        }
-        for(int j = 1; j < k; j++) {
-          if(l[j] == 0. && j != minIndex) {
-            l[j] = 2 * sep[j] - best;
+          double dist = l[j] = sqrtdistance(fv, means[j]);
+          if(dist < best) {
+            minIndex = j;
+            best = dist;
           }
         }
         // Assign to nearest cluster.
         clusters.get(minIndex).add(it);
         assignment.putInt(it, minIndex);
-        upper.putDouble(it, best);
         plusEquals(sums[minIndex], fv);
+        upper.putDouble(it, best);
       }
       return relation.size();
     }
@@ -220,14 +212,14 @@ public class SimplifiedElkanKMeans<V extends NumberVector> extends AbstractKMean
             u = dist;
           }
         }
-        // Object is to be reassigned.
+        // Object has to be reassigned.
         if(cur != orig) {
-          upper.putDouble(it, u); // Remember bound.
           clusters.get(cur).add(it);
           clusters.get(orig).remove(it);
           assignment.putInt(it, cur);
           plusMinusEquals(sums[cur], sums[orig], fv);
           ++changed;
+          upper.putDouble(it, u); // Remember bound.
         }
       }
       return changed;

@@ -203,9 +203,9 @@ public class Entropy {
    */
   private void computeMIFull(int[][] contingency, int r, int c, int n, int m, double byn, double mlogn, double[] logs) {
     // Precompute log(factorial) table:
-    double[] lfacs = new double[n];
+    double[] lfacs = new double[Math.max(n, 1)];
     double tmp = 0.;
-    for(int i = 2, e = n - m; i <= e; i++) {
+    for(int i = 2, e = Math.max(n - m, 2); i <= e; i++) {
       lfacs[i - 2] = tmp += log(i, logs);
     }
     final int[] lastrow = contingency[r];
@@ -549,7 +549,7 @@ public class Entropy {
       bibkey = "DBLP:journals/jmlr/StrehlG02")
   public double geometricNMI() {
     return entropyFirst * entropySecond <= 0 ? mutualInformation : //
-        mutualInformation / FastMath.sqrt(entropyFirst * entropySecond);
+        mutualInformation / Math.sqrt(entropyFirst * entropySecond);
   }
 
   /**
@@ -624,7 +624,7 @@ public class Entropy {
    */
   public double adjustedGeometricMI() {
     return entropyFirst * entropySecond <= 0 ? mutualInformation - expectedMutualInformation : //
-        (mutualInformation - expectedMutualInformation) / (FastMath.sqrt(entropyFirst * entropySecond) - expectedMutualInformation);
+        (mutualInformation - expectedMutualInformation) / (Math.sqrt(entropyFirst * entropySecond) - expectedMutualInformation);
   }
 
   /**

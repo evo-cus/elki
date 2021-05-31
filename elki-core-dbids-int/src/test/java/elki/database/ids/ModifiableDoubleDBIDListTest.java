@@ -24,10 +24,6 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-import elki.database.ids.DBID;
-import elki.database.ids.DBIDUtil;
-import elki.database.ids.ModifiableDoubleDBIDList;
-
 /**
  * Test a corner case when sorting: duplicate keys.
  * 
