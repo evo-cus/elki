@@ -57,6 +57,10 @@ import elki.utilities.random.RandomFactory;
  * Greg Hamerly and Charles Elkan<br>
  * Learning the K in K-Means<br>
  * Advances in Neural Information Processing Systems 17 (NIPS 2004)
+ * <p>
+ * Lorentz Jäntschi and Sorana D. Bolboacă<br>
+ * Computation of Probability Associated with Anderson–Darling Statistic<br>
+ * Mathematics (MDPI, 2018) <br>
  * 
  * @author Robert Gehde
  *
@@ -67,12 +71,15 @@ import elki.utilities.random.RandomFactory;
     booktitle = "Advances in Neural Information Processing Systems 17 (NIPS 2004)", //
     title = "Learning the k in k-means", //
     url = "https://www.researchgate.net/publication/2869155_Learning_the_K_in_K-Means")
+@Reference(authors = "Jäntschi, Lorentz and Bolboacă, Sorana D.", //
+    booktitle = "Mathematics", //
+    title = "Computation of Probability Associated with Anderson–Darling Statistic", //
+    url = "https://www.mdpi.com/2227-7390/6/6/88")
 public class GMeans<V extends NumberVector, M extends MeanModel> extends XMeans<V, M> {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(GMeans.class);
-
 
   /**
    * Random object.
@@ -225,9 +232,7 @@ public class GMeans<V extends NumberVector, M extends MeanModel> extends XMeans<
 
   /**
    * Parameterization class.
-   *
-   * @author Tibor Goldschwendt
-   * @author Erich Schubert
+   * 
    * @author Robert Gehde
    *
    * @hidden
@@ -246,11 +251,10 @@ public class GMeans<V extends NumberVector, M extends MeanModel> extends XMeans<
      */
     protected double alpha;
 
-
     @Override
     protected void configureInformationCriterion(Parameterization config) {
-      // GMeans doesn't need an Information Criterion but the significance level
-      // for AD Tests
+      // GMeans doesn't need an Information Criterion
+      // but the significance level for AD Tests
       DoubleParameter alphaP = new DoubleParameter(ALPHA_ID, 0.0001) //
           .addConstraint(CommonConstraints.GREATER_THAN_ZERO_DOUBLE) //
           .addConstraint(CommonConstraints.LESS_EQUAL_ONE_DOUBLE);
