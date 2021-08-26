@@ -35,31 +35,21 @@ import elki.database.ids.DBIDIter;
 import elki.database.relation.ProxyView;
 import elki.database.relation.Relation;
 import elki.distance.NumberVectorDistance;
-import elki.distance.minkowski.SquaredEuclideanDistance;
 import elki.logging.Logging;
-import elki.logging.progress.MutableProgress;
-import elki.logging.statistics.LongStatistic;
-import elki.logging.statistics.StringStatistic;
 import elki.math.linearalgebra.VMath;
 import elki.math.statistics.tests.AndersonDarlingTest;
-import elki.result.Metadata;
 import elki.utilities.datastructures.iterator.It;
 import elki.utilities.documentation.Reference;
 import elki.utilities.optionhandling.OptionID;
-import elki.utilities.optionhandling.WrongParameterValueException;
 import elki.utilities.optionhandling.constraints.CommonConstraints;
-import elki.utilities.optionhandling.parameterization.ChainedParameterization;
-import elki.utilities.optionhandling.parameterization.ListParameterization;
 import elki.utilities.optionhandling.parameterization.Parameterization;
 import elki.utilities.optionhandling.parameters.DoubleParameter;
-import elki.utilities.optionhandling.parameters.IntParameter;
-import elki.utilities.optionhandling.parameters.ObjectParameter;
-import elki.utilities.optionhandling.parameters.RandomParameter;
 import elki.utilities.random.RandomFactory;
 
 /**
  * G-Means extends K-Means and estimates the number of centers with Anderson
- * Darling Test.
+ * Darling Test.<br>
+ * Implemented as specialization of XMeans.
  * 
  * <p>
  * Reference:
@@ -77,36 +67,12 @@ import elki.utilities.random.RandomFactory;
     booktitle = "Advances in Neural Information Processing Systems 17 (NIPS 2004)", //
     title = "Learning the k in k-means", //
     url = "https://www.researchgate.net/publication/2869155_Learning_the_K_in_K-Means")
-public class GMeans<V extends NumberVector, M extends MeanModel> extends AbstractKMeans<V, M> {
+public class GMeans<V extends NumberVector, M extends MeanModel> extends XMeans<V, M> {
   /**
    * The logger for this class.
    */
   private static final Logging LOG = Logging.getLogger(GMeans.class);
 
-  /**
-   * Key for statistics logging.
-   */
-  private static final String KEY = GMeans.class.getName();
-
-  /**
-   * Inner k-means algorithm.
-   */
-  private KMeans<V, M> innerKMeans;
-
-  /**
-   * Effective number of clusters, minimum and maximum.
-   */
-  private int k, k_min, k_max;
-
-  /**
-   * Initializer for k-means.
-   */
-  Predefined splitInitializer;
-
-  /**
-   * Random factory.
-   */
-  RandomFactory rnd;
 
   /**
    * Random object.
@@ -119,82 +85,12 @@ public class GMeans<V extends NumberVector, M extends MeanModel> extends Abstrac
   double alpha;
 
   public GMeans(NumberVectorDistance<? super V> distance, double alpha, int k_min, int k_max, int maxiter, KMeans<V, M> innerKMeans, KMeansInitialization initializer, RandomFactory random) {
-    super(distance, k_min, maxiter, initializer);
+    super(distance, k_min, k_max, maxiter, innerKMeans, initializer, null, GMeans.class.getName(), random);
     this.alpha = alpha;
-    this.k_min = k_min;
-    this.k_max = k_max;
-    this.k = k_min;
-    this.innerKMeans = innerKMeans;
-    this.splitInitializer = new Predefined((double[][]) null);
-    this.innerKMeans.setInitializer(this.splitInitializer);
-    this.innerKMeans.setDistance(distance);
-    this.rnd = random;
     this.rand = this.rnd.getRandom();
   }
 
   @Override
-  public Clustering<M> run(Relation<V> relation) {
-    MutableProgress prog = LOG.isVerbose() ? new MutableProgress("G-means number of clusters", k_max, LOG) : null;
-
-    // Run initial k-means to find at least k_min clusters
-    innerKMeans.setK(k_min);
-    LOG.statistics(new StringStatistic(KEY + ".initialization", initializer.toString()));
-    splitInitializer.setInitialMeans(initializer.chooseInitialMeans(relation, k_min, distance));
-    Clustering<M> clustering = innerKMeans.run(relation);
-
-    if(prog != null) {
-      prog.setProcessed(k_min, LOG);
-    }
-
-    ArrayList<Cluster<M>> clusters = new ArrayList<>(clustering.getAllClusters());
-    while(clusters.size() <= k_max) {
-      // Improve-Structure:
-      ArrayList<Cluster<M>> nextClusters = new ArrayList<>();
-      for(Cluster<M> cluster : clusters) {
-        // Try to split this cluster:
-        List<Cluster<M>> childClusterList = splitCluster(cluster, relation);
-        nextClusters.addAll(childClusterList);
-        if(childClusterList.size() > 1) {
-          k += childClusterList.size() - 1;
-          if(prog != null) {
-            if(k >= k_max) {
-              prog.setTotal(k + 1);
-            }
-            prog.setProcessed(k, LOG);
-          }
-        }
-      }
-      if(clusters.size() == nextClusters.size()) {
-        break;
-      }
-      // Improve-Params:
-      splitInitializer.setInitialClusters(nextClusters);
-      innerKMeans.setK(nextClusters.size());
-      innerKMeans.setInitializer(splitInitializer);
-      clustering = innerKMeans.run(relation);
-      clusters.clear();
-      clusters.addAll(clustering.getAllClusters());
-    }
-
-    // Ensure that the progress bar finished.
-    if(prog != null) {
-      prog.setTotal(k);
-      prog.setProcessed(k, LOG);
-    }
-    LOG.statistics(new LongStatistic(KEY + ".num-clusters", clusters.size()));
-    Clustering<M> result = new Clustering<>(clusters);
-    Metadata.of(result).setLongName("G-Means Clustering");
-    return result;
-  }
-
-  /**
-   * Conditionally splits the clusters based on the information criterion.
-   *
-   * @param parentCluster Cluster to split
-   * @param relation Data relation
-   * @return Parent cluster when split decreases clustering quality or child
-   *         clusters when split improves clustering.
-   */
   protected List<Cluster<M>> splitCluster(Cluster<M> parentCluster, Relation<V> relation) {
     // Transform parent cluster into a clustering
     ArrayList<Cluster<M>> parentClusterList = new ArrayList<>(1);
@@ -273,11 +169,13 @@ public class GMeans<V extends NumberVector, M extends MeanModel> extends Abstrac
     Arrays.sort(projectedValues);
     double A2 = AndersonDarlingTest.A2StandardNormal(projectedValues);
     A2 = AndersonDarlingTest.removeBiasNormalDistribution(A2, n);
+    double pValue = pValueAdjA2(A2);
     if(LOG.isDebugging()) {
       LOG.debug("AndersonDarlingValue: " + A2);
+      LOG.debug("p-value: " + pValue);
     }
     // Check if split is an improvement:
-    return pValueAdjA2(A2) > alpha ? parentClusterList : childClustering.getAllClusters();
+    return pValue > alpha ? parentClusterList : childClustering.getAllClusters();
   }
 
   /**
@@ -337,85 +235,26 @@ public class GMeans<V extends NumberVector, M extends MeanModel> extends Abstrac
    * @param <V> Vector type
    * @param <M> Model type of inner algorithm
    */
-  public static class Par<V extends NumberVector, M extends MeanModel> extends AbstractKMeans.Par<V> {
-    /**
-     * Parameter to specify the kMeans variant.
-     */
-    public static final OptionID INNER_KMEANS_ID = new OptionID("gmeans.kmeans", "kMeans algorithm to use.");
-
-    /**
-     * Minimum number of clusters.
-     */
-    public static final OptionID K_MIN_ID = new OptionID("gmeans.k_min", "The minimum number of clusters to find.");
-
-    /**
-     * Randomization seed.
-     */
-    public static final OptionID SEED_ID = new OptionID("gmeans.seed", "Random seed for splitting clusters.");
-
+  public static class Par<V extends NumberVector, M extends MeanModel> extends XMeans.Par<V, M> {
     /**
      * Significance level.
      */
     public static final OptionID ALPHA_ID = new OptionID("gmeans.alpha", "Significance level for the Anderson Darling test.");
 
     /**
-     * Variant of kMeans
-     */
-    protected KMeans<V, M> innerKMeans;
-
-    /**
-     * Minimum and maximum number of result clusters.
-     */
-    protected int k_min, k_max;
-
-    /**
      * Significance level.
      */
     protected double alpha;
 
-    /**
-     * Random number generator.
-     */
-    private RandomFactory random;
 
     @Override
-    public void configure(Parameterization config) {
-      // Do NOT invoke super.makeOptions to hide the "k" parameter.
-      IntParameter kMinP = new IntParameter(K_MIN_ID, 2) //
-          .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT);
-      kMinP.grab(config, x -> k_min = x);
+    protected void configureInformationCriterion(Parameterization config) {
+      // GMeans doesn't need an Information Criterion but the significance level
+      // for AD Tests
       DoubleParameter alphaP = new DoubleParameter(ALPHA_ID, 0.0001) //
           .addConstraint(CommonConstraints.GREATER_THAN_ZERO_DOUBLE) //
           .addConstraint(CommonConstraints.LESS_EQUAL_ONE_DOUBLE);
       alphaP.grab(config, x -> alpha = x);
-
-      IntParameter kMaxP = new IntParameter(KMeans.K_ID) //
-          .addConstraint(CommonConstraints.GREATER_EQUAL_ONE_INT);
-      kMaxP.grab(config, x -> k_max = x);
-      // Non-formalized parameter constraint: k_min <= k_max
-      if(k_min > k_max) {
-        config.reportError(new WrongParameterValueException(kMinP, "must be at most", kMaxP, ""));
-      }
-
-      getParameterInitialization(config);
-      getParameterMaxIter(config);
-      getParameterDistance(config);
-
-      new RandomParameter(SEED_ID).grab(config, x -> random = x);
-      ObjectParameter<KMeans<V, M>> innerKMeansP = new ObjectParameter<>(INNER_KMEANS_ID, KMeans.class, LloydKMeans.class);
-      if(config.grab(innerKMeansP)) {
-        ChainedParameterization combinedConfig = new ChainedParameterization(new ListParameterization() //
-            .addParameter(KMeans.K_ID, k_min) //
-            .addParameter(KMeans.INIT_ID, new Predefined((double[][]) null)) //
-            .addParameter(KMeans.MAXITER_ID, maxiter) //
-            // Setting the distance to null if undefined at this point will
-            // cause validation errors later. So fall back to the default.
-            .addParameter(KMeans.DISTANCE_FUNCTION_ID, distance != null ? //
-                distance : SquaredEuclideanDistance.STATIC), config);
-        combinedConfig.errorsTo(config);
-        innerKMeans = innerKMeansP.instantiateClass(combinedConfig);
-      }
-
     }
 
     @Override
